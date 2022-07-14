@@ -22,7 +22,8 @@ reduce_window2d::reduce_window2d(reduce_op_t reduce_op, shape_t input_shape, flo
     : reduce_op_(reduce_op), init_value_(init_value), filter_h_(filter_h), filter_w_(filter_w), padding_h_(padding_h), padding_w_(padding_w), stride_h_(stride_h), stride_w_(stride_w), dilation_h_(dilation_h), dilation_w_(dilation_w), fused_activation_(fused_activation), ceil_mode_(ceil_mode), count_include_pad_(count_include_pad), padding_h_w_after_(padding_h_w_after), strict_inside_input_(strict_inside_input)
 {
     add_input("input", dt_float32, input_shape);
-    if (input_shape.size() < 4 && (int32_t)input_shape[3]==0){
+    if (input_shape.size() < 4 && (int32_t)input_shape[3] == 0)
+    {
 
         auto output_size_h = get_windowed_output_size((int32_t)input_shape[2] + padding_h_.sum(), filter_h_, stride_h_, dilation_h_, false, ceil_mode);
 
@@ -36,8 +37,9 @@ reduce_window2d::reduce_window2d(reduce_op_t reduce_op, shape_t input_shape, flo
                 input_shape[0],
                 input_shape[1],
                 output_size_h });
-                
-    }else{
+    }
+    else
+    {
         auto output_size_h = get_windowed_output_size((int32_t)input_shape[2] + padding_h_.sum(), filter_h_, stride_h_, dilation_h_, false, ceil_mode);
         auto output_size_w = get_windowed_output_size((int32_t)input_shape[3] + padding_w_.sum(), filter_w_, stride_w_, dilation_w_, false, ceil_mode);
 
@@ -55,8 +57,8 @@ reduce_window2d::reduce_window2d(reduce_op_t reduce_op, shape_t input_shape, flo
                 input_shape[1],
                 output_size_h,
                 output_size_w });
-            }
-}  
+    }
+}
 
 bool reduce_window2d::properties_equal(node &other) const
 {
