@@ -38,6 +38,7 @@ result<void> reduce_window2d_impl(const float *input, float init_value, float *o
     int32_t filter_h, int32_t filter_w, int32_t stride_h, int32_t stride_w, int32_t dilation_h, int32_t dilation_w,
     value_range<float> fused_activation, TBinaryOp &&binary_op, TWindowOp &&window_op, NNCASE_UNUSED kernel_context &context) noexcept
 {
+    
     const auto out_h = kernels::detail::get_windowed_output_size(in_shape[2], filter_h, stride_h, dilation_h, padding_h);
     //const auto out_w = kernels::detail::get_windowed_output_size(in_shape[3], filter_w, stride_w, dilation_w, padding_w);
     runtime_shape_t out_shape { in_shape[0], in_shape[1], out_h/*, out_w*/ };
