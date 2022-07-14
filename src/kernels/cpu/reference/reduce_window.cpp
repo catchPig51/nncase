@@ -41,6 +41,7 @@ result<void> reduce_window2d_impl(const float *input, float init_value, float *o
     printf("%d\r\n",(int32_t)in_shape[0]);
     printf("%d\r\n",(int32_t)in_shape[1]);
     printf("%d\r\n",(int32_t)in_shape[2]);
+    printf("%d\r\n",(int32_t)in_shape[3]);
     const auto out_h = kernels::detail::get_windowed_output_size(in_shape[2], filter_h, stride_h, dilation_h, padding_h);
     //const auto out_w = kernels::detail::get_windowed_output_size(in_shape[3], filter_w, stride_w, dilation_w, padding_w);
     runtime_shape_t out_shape { in_shape[0], in_shape[1], out_h/*, out_w*/ };
