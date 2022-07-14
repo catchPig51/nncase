@@ -89,10 +89,9 @@ void onnx_importer::convert_pool(const NodeProto &node, const reduce_op_t reduce
 
     std::array<size_t, 2> dilations = { 1, 1 };
 
-    if (input_shape.size() < 4)
-        throw std::invalid_argument("Image with 4-dimensional shape is expected on the input of pooling operators.");
-
-    const auto &kernel_shape = global ? std::vector<int> { static_cast<int>(input_shape[2]), static_cast<int>(input_shape[3]) } : get_attribute<std::vector<int>>(node, "kernel_shape").value();
+    //if (input_shape.size() < 4)
+    //   throw std::invalid_argument("Image with 4-dimensional shape is expected on the input of pooling operators.");
+    const auto &kernel_shape = global ? (static_cast<int>(input_shape[0])>1 ? std::vector<int> { static_cast<int>(input_shape[2]), static_cast<int>(input_shape[3]) }: std::vector<int> { 1, static_cast<int>(input_shape[2]) }) : get_attribute<std::vector<int>>(node, "kernel_shape").value();
 
     std::array<size_t, 2> strides = { 1, 1 };
 

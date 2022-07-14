@@ -38,43 +38,45 @@ result<void> reduce_window2d_impl(const float *input, float init_value, float *o
     int32_t filter_h, int32_t filter_w, int32_t stride_h, int32_t stride_w, int32_t dilation_h, int32_t dilation_w,
     value_range<float> fused_activation, TBinaryOp &&binary_op, TWindowOp &&window_op, NNCASE_UNUSED kernel_context &context) noexcept
 {
+    printf("%d\r\n",(int32_t)in_shape[0]);
+    printf("%d\r\n",(int32_t)in_shape[1]);
+    printf("%d\r\n",(int32_t)in_shape[2]);
     const auto out_h = kernels::detail::get_windowed_output_size(in_shape[2], filter_h, stride_h, dilation_h, padding_h);
-    const auto out_w = kernels::detail::get_windowed_output_size(in_shape[3], filter_w, stride_w, dilation_w, padding_w);
-    runtime_shape_t out_shape { in_shape[0], in_shape[1], out_h, out_w };
-
+    //const auto out_w = kernels::detail::get_windowed_output_size(in_shape[3], filter_w, stride_w, dilation_w, padding_w);
+    runtime_shape_t out_shape { in_shape[0], in_shape[1], out_h/*, out_w*/ };
     for (size_t batch = 0; batch < in_shape[0]; batch++)
     {
         for (size_t oc = 0; oc < in_shape[1]; oc++)
         {
             for (size_t oy = 0; oy < out_h; oy++)
             {
-                for (size_t ox = 0; ox < out_w; ox++)
-                {
+                //for (size_t ox = 0; ox < out_w; ox++)
+                //{
                     const int32_t in_y_origin = ((int32_t)oy * stride_h) - padding_h.before;
-                    const int32_t in_x_origin = ((int32_t)ox * stride_w) - padding_w.before;
+                    //const int32_t in_x_origin = ((int32_t)ox * stride_w) - padding_w.before;
                     const size_t filter_y_start = (size_t)std::max(0, (-in_y_origin + dilation_h - 1) / dilation_h);
                     const size_t filter_y_end = (size_t)std::min(filter_h, ((int32_t)in_shape[2] - in_y_origin + dilation_h - 1) / dilation_h);
-                    const size_t filter_x_start = (size_t)std::max(0, (-in_x_origin + dilation_w - 1) / dilation_w);
-                    const size_t filter_x_end = (size_t)std::min(filter_w, ((int32_t)in_shape[3] - in_x_origin + dilation_w - 1) / dilation_w);
+                    //const size_t filter_x_start = (size_t)std::max(0, (-in_x_origin + dilation_w - 1) / dilation_w);
+                    //const size_t filter_x_end = (size_t)std::min(filter_w, ((int32_t)in_shape[3] - in_x_origin + dilation_w - 1) / dilation_w);
                     float value = init_value;
                     int32_t kernel_count = 0;
 
                     for (size_t ky = filter_y_start; ky < filter_y_end; ky++)
                     {
-                        for (size_t kx = filter_x_start; kx < filter_x_end; kx++)
-                        {
+                       // for (size_t kx = filter_x_start; kx < filter_x_end; kx++)
+                        //{
                             const size_t in_y = in_y_origin + dilation_h * ky;
-                            const size_t in_x = in_x_origin + dilation_w * kx;
+                            //const size_t in_x = in_x_origin + dilation_w * kx;
 
-                            const float in_v = input[offset(in_strides, { batch, oc, in_y, in_x })];
+                            const float in_v = input[offset(in_strides, { batch, oc, in_y/*, in_x*/ })];
 
                             value = binary_op(value, in_v);
                             kernel_count++;
-                        }
+                        //}
                     }
 
-                    output[offset(out_strides, { batch, oc, oy, ox })] = kernels::detail::apply_activation(window_op(value, kernel_count), fused_activation);
-                }
+                    output[offset(out_strides, { batch, oc, oy/*, ox*/ })] = kernels::detail::apply_activation(window_op(value, kernel_count), fused_activation);
+                //}
             }
         }
     }
