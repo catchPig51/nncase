@@ -19,6 +19,7 @@
 | Ceil | ✅ |
 | Celu | ✅ |
 | Clip | ✅ |
+| Compress | ✅ |
 | Concat | ✅ |
 | Constant | ✅ |
 | ConstantOfShape | ✅ |
@@ -35,9 +36,11 @@
 | Exp | ✅ |
 | Expand | ✅ |
 | Equal | ✅ |
+| Erf | ✅ |
 | Flatten | ✅ |
 | Floor | ✅ |
 | Gather | ✅ |
+| GatherElements | ✅ |
 | GatherND | ✅ |
 | Gemm | ✅ |
 | GlobalAveragePool | ✅ |
@@ -50,6 +53,7 @@
 | HardSwish | ✅ |
 | Identity | ✅ |
 | InstanceNormalization | ✅ |
+| LayerNormalization | ✅ |
 | LpNormalization | ✅ |
 | LeakyRelu | ✅ |
 | Less | ✅ |

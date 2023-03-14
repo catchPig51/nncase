@@ -14,12 +14,14 @@ set(SRCS runtime_module.cpp
         ops/tensor.broadcast.cpp
         ops/tensor.call.cpp
         ops/tensor.compare.cpp
+        ops/tensor.compress.cpp
         ops/tensor.conv2d.cpp
         ops/tensor.convert.cpp
         ops/tensor.copy.cpp
         ops/tensor.cumsum.cpp
         ops/tensor.dequantize.cpp
         ops/tensor.gather.cpp
+        ops/tensor.gather_elements.cpp
         ops/tensor.gather_nd.cpp
         ops/tensor.gru.cpp
         ops/tensor.hardmax.cpp
@@ -39,12 +41,14 @@ set(SRCS runtime_module.cpp
         ops/tensor.sigmoid.cpp
         ops/tensor.slice.cpp
         ops/tensor.softmax.cpp
+        ops/tensor.space_to_batch.cpp
         ops/tersor.ternary.cpp
         ops/tensor.topk.cpp
         ops/tensor.transpose.cpp
         ops/tensor.trilu.cpp
         ops/tensor.tflite_detection_postprocess.cpp
-        ops/tensor.unary.cpp)
+        ops/tensor.unary.cpp
+        ops/tensor.layernorm.cpp)
 
 if (BUILDING_RUNTIME)
     add_library(runtime_stackvm OBJECT ${SRCS})

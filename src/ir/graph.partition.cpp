@@ -17,6 +17,7 @@
 #include <nncase/ir/ops/constant.h>
 #include <nncase/ir/visitor.h>
 #include <nncase/runtime/stackvm/runtime_module.h>
+#include <queue>
 #include <unordered_set>
 
 using namespace nncase;
@@ -47,12 +48,26 @@ struct region
                 region_inputs.emplace(in);
             for (auto out : n.outputs())
                 outputs.emplace(out);
+
+            std::unordered_map<output_connector *, int> need_remove_outputs;
             for (auto it = region_inputs.begin(); it != region_inputs.end();)
             {
                 if (outputs.contains((*it)->connection()))
+                {
+                    if (need_remove_outputs.find((*it)->connection()) != need_remove_outputs.end())
+                        need_remove_outputs.at((*it)->connection()) += 1;
+                    else
+                        need_remove_outputs.emplace((*it)->connection(), 1);
                     it = region_inputs.erase(it);
+                }
                 else
                     ++it;
+            }
+
+            for (auto it : need_remove_outputs)
+            {
+                if (it.first->connections().size() == it.second)
+                    outputs.erase(it.first);
             }
 
             if (is_all_noaction && n.attributes() & node_attr_action)
@@ -101,6 +116,123 @@ struct region
     }
 };
 
+typedef struct Region_node
+{
+    std::list<region>::iterator node;
+    Region_node *parent = nullptr;
+    Region_node *child = nullptr;
+    Region_node *bro = nullptr;
+} Region_node, *Region_Tree;
+
+class Region_tree
+{
+public:
+    Region_node *create_tree(std::list<region>::iterator new_node, std::list<region> &regions, int depth)
+    {
+
+        Region_node *root = create_node();
+        root->node = new_node;
+        auto bro = root->bro;
+
+        // find a path from itb--> ita
+        if (new_node == target_region_)
+        {
+            leaves_.push_back(root);
+            return root;
+        }
+
+        // limit tree depth
+        if (depth >= 10)
+        {
+            skip_ = true;
+            return root;
+        }
+
+        for (auto it : new_node->region_inputs)
+        {
+            for (auto itb = regions.begin(); itb != regions.end(); itb++)
+            {
+                if (itb->outputs.contains(it->connection()))
+                {
+                    if (root->child == nullptr)
+                    {
+                        root->child = create_tree(itb, regions, depth + 1);
+                        root->child->parent = root;
+                    }
+                    else
+                    {
+                        bro = create_tree(itb, regions, depth);
+                        bro->parent = root;
+                        bro = bro->bro;
+                    }
+                }
+            }
+        }
+
+        return root;
+    }
+
+    bool not_have_circle()
+    {
+        // if tree depth > 20, ignore merge itb--> ita
+        if (skip_)
+            return false;
+
+        // each leaf has only one path to root.
+        // if all the paths of leaves to root don't have CPU op ,itb can merge to ita.
+        for (auto it : leaves_)
+        {
+            auto condition_ptr = it->parent;
+            while (condition_ptr != nullptr)
+            {
+                if (condition_ptr->node->module_type == runtime::stackvm::stackvm_module_type && !condition_ptr->node->is_all_noaction)
+                    return false;
+                condition_ptr = condition_ptr->parent;
+            }
+        }
+        return true;
+    }
+
+    void set_label_region(std::list<region>::iterator ita, std::list<region>::iterator itb)
+    {
+        start_region_ = itb;
+        target_region_ = ita;
+    }
+
+    void free_tree(Region_node *root)
+    {
+        if (root != nullptr)
+        {
+            if (root->child != nullptr)
+            {
+                free_tree(root->child);
+            }
+            else if (root->bro != nullptr)
+            {
+                free_tree(root->bro);
+            }
+
+            delete root;
+            root->child = nullptr;
+            root->bro = nullptr;
+            root->parent = nullptr;
+            root = nullptr;
+        }
+    }
+
+private:
+    Region_node *create_node()
+    {
+        Region_Tree node = new Region_node();
+        return node;
+    }
+
+    std::list<region>::iterator start_region_;
+    std::list<region>::iterator target_region_;
+    std::vector<Region_node *> leaves_;
+    bool skip_;
+};
+
 class graph_merger
 {
 public:
@@ -133,6 +265,13 @@ private:
             for (auto in : node.inputs())
             {
                 auto &conn = in->connection()->owner();
+
+                if (conn.runtime_opcode() == op_constant)
+                {
+                    last_region = nullptr;
+                    break;
+                }
+
                 auto it = node_to_region_.find(&conn);
                 if (it != node_to_region_.end())
                 {
@@ -181,7 +320,38 @@ private:
             changed |= merge_child_region();
             changed |= merge_parent_region();
             changed |= merge_same_input_region();
+
         } while (changed);
+
+        do
+        {
+            changed = false;
+            changed |= merge_child_region_stage_2();
+        } while (changed);
+    }
+
+    bool check_circle(std::list<region>::iterator ita, std::list<region>::iterator itb)
+    {
+        // merge directly
+        if (ita->outputs.size() == 1)
+        {
+            for (auto it : ita->outputs)
+            {
+                if (it->connections().size() == 1)
+                    return true;
+            }
+        }
+        if (itb->region_inputs.size() == 1)
+        {
+            return true;
+        }
+
+        auto check = std::make_shared<Region_tree>();
+        check->set_label_region(ita, itb);
+        auto root = check->create_tree(itb, regions_, 0);
+        auto flag = check->not_have_circle();
+        check->free_tree(root);
+        return flag;
     }
 
     bool merge_child_region()
@@ -205,6 +375,47 @@ private:
                     // itb's inputs all connect to ita's output
                     if ((ita->module_type == itb->module_type || itb->is_all_noaction)
                         && std::all_of(itb->region_inputs.begin(), itb->region_inputs.end(), [&](input_connector *in) { return ita->outputs.contains(in->connection()); }))
+                        to_be_merge.emplace_back(itb);
+                }
+
+                if (!to_be_merge.empty())
+                {
+                    for (auto region : to_be_merge)
+                    {
+                        ita->merge(*region);
+                        regions_.erase(region);
+                    }
+
+                    changed = ever_changed = true;
+                    break;
+                }
+            }
+        } while (changed);
+        return ever_changed;
+    }
+
+    bool merge_child_region_stage_2()
+    {
+        bool ever_changed = false;
+        bool changed;
+        do
+        {
+            changed = false;
+            for (auto ita = regions_.begin(); ita != regions_.end(); ++ita)
+            {
+                std::vector<std::list<region>::iterator> to_be_merge;
+                for (auto itb = regions_.begin(); itb != regions_.end(); ++itb)
+                {
+                    // don't merge stackvm region
+                    if (ita == itb
+                        || (ita->module_type == runtime::stackvm::stackvm_module_type
+                            && itb->module_type == runtime::stackvm::stackvm_module_type))
+                        continue;
+
+                    // itb's has inputs connect to ita's output without circle
+                    if ((ita->module_type == itb->module_type || itb->is_all_noaction)
+                        && std::any_of(itb->region_inputs.begin(), itb->region_inputs.end(), [&](input_connector *in) { return ita->outputs.contains(in->connection()); })
+                        && check_circle(ita, itb))
                         to_be_merge.emplace_back(itb);
                 }
 
@@ -314,6 +525,8 @@ private:
 
     void add_node_to_region(region &region, node &node)
     {
+        if (node.module_type() != runtime::stackvm::stackvm_module_type)
+            region.module_type = node.module_type();
         region.add_node(node);
         node_to_region_.emplace(&node, &region);
     }
@@ -337,7 +550,7 @@ void graph::merge_module_regions()
         if (region.module_type == runtime::stackvm::stackvm_module_type)
             continue;
 
-        auto split = split_subgraph(region.nodes);
+        auto split = split_subgraph(region.nodes, true);
         auto &subg = add_subgraph(std::move(split.subgraph));
         auto c = emplace<call>(subg);
         c->name(std::string(region.module_type.data()) + "_" + std::to_string(subids[region.module_type.data()]++));

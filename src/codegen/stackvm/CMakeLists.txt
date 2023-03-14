@@ -7,12 +7,14 @@ set(SRCS module_builder.cpp
         ops/broadcast.cpp
         ops/call.cpp
         ops/compare.cpp
+        ops/compress.cpp
         ops/conv2d.cpp
         ops/convert.cpp
         ops/copy.cpp
         ops/cumsum.cpp
         ops/dequantize.cpp
         ops/gather.cpp
+        ops/gather_elements.cpp
         ops/gather_nd.cpp
         ops/gru.cpp
         ops/hardmax.cpp
@@ -31,13 +33,15 @@ set(SRCS module_builder.cpp
         ops/slice.cpp
         ops/sigmoid.cpp
         ops/softmax.cpp
+        ops/space_to_batch.cpp
         ops/table_lookup1d.cpp
         ops/ternary.cpp
         ops/topk.cpp
         ops/transpose.cpp
         ops/trilu.cpp
         ops/tflite_detection_postprocess.cpp
-        ops/unary.cpp)
+        ops/unary.cpp
+        ops/layernorm.cpp)
 
 add_library(codegen_stackvm OBJECT ${SRCS})
 target_link_libraries(codegen_stackvm PUBLIC ir schedule)

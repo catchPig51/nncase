@@ -28,6 +28,7 @@
 #include <nncase/transforms/neutral/fold_conv2d_binary.h>
 #include <nncase/transforms/neutral/fold_convert.h>
 #include <nncase/transforms/neutral/fold_dilated_conv2d.h>
+#include <nncase/transforms/neutral/fold_layernorm.h>
 #include <nncase/transforms/neutral/fold_matmul_add.h>
 #include <nncase/transforms/neutral/fold_pad.h>
 #include <nncase/transforms/neutral/fold_quantize.h>
@@ -96,7 +97,7 @@ void neutral_target::add_default_transforms(ir::transforms::transform_pass &pass
     // pass.emplace<dequantize_transpose_motion_transform>();
     pass.emplace<dequantize_bitcast_motion_transform>();
     pass.emplace<dequantize_reshape_motion_transform>();
-    pass.emplace<dequantize_slice_motion_transform>();
+    // pass.emplace<dequantize_slice_motion_transform>();
     // pass.emplace<dequantize_pad_motion_transform>();
     pass.emplace<quantize_pad_motion_transform>();
     //    pass.emplace<quantize_transbin_motion_transform>();
@@ -110,6 +111,10 @@ void neutral_target::add_default_transforms(ir::transforms::transform_pass &pass
     pass.emplace<fold_slice_slice_transform>();
     pass.emplace<fold_pad_pad_transform>();
     pass.emplace<fold_pad_strided_slice_transform>();
+
+    pass.emplace<fold_layernorm_pattern1_transform>();
+    pass.emplace<fold_layernorm_pattern2_transform>();
+    pass.emplace<fold_layernorm_pattern3_transform>();
 
     pass.emplace<fold_bitcast_transform>();
 
@@ -199,6 +204,12 @@ void neutral_target::register_target_independent_passes(const module_type_t &typ
         p.emplace<fold_quantize_transform>();
         pass_mgr.add_pass(std::move(p));
     }
+    // split to slice
+    {
+        transform_pass p("split_to_slice");
+        p.emplace<split_to_slice_transform>();
+        pass_mgr.add_pass(std::move(p));
+    }
 
     if (type == runtime::stackvm::stackvm_module_type)
     {
@@ -238,16 +249,6 @@ void neutral_target::register_target_dependent_passes([[maybe_unused]] const mod
 
 void neutral_target::register_quantize_annotation_passes([[maybe_unused]] const module_type_t &type, ir::transforms::pass_manager &pass_mgr)
 {
-    {
-        transform_pass p("fuse_unary");
-        p.emplace<fuse_one_unary_transform>();
-        p.emplace<fuse_one_binary_transform>();
-        p.emplace<fuse_two_fused_unary_transform>();
-        p.emplace<fuse_one_fused_unary_with_binary_transform>();
-        p.emplace<fuse_two_fused_unary_with_binary_transform>();
-        pass_mgr.add_pass(std::move(p));
-    }
-
     {
         transform_pass p("annotate_neutral_quantize");
         p.emplace<add_quant_checkpoints_transform>(std::in_place, ir::op_fused_unary, ir::op_bitcast, ir::op_dequantize, ir::op_binary, ir::op_output_node);

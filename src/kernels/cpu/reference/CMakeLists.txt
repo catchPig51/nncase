@@ -4,6 +4,7 @@ set(SRCS batch_to_space.cpp
          binary.cpp
          broadcast.cpp
          compare.cpp
+         compress.cpp
          concat.cpp
          convolution.cpp
          convert.cpp
@@ -11,6 +12,7 @@ set(SRCS batch_to_space.cpp
          cumsum.cpp
          dequantize.cpp
          gather.cpp
+         gather_elements.cpp
          gather_nd.cpp
          gru.cpp
          hardmax.cpp
@@ -30,10 +32,12 @@ set(SRCS batch_to_space.cpp
          sigmoid.cpp
          softmax.cpp
          slice.cpp
+         space_to_batch.cpp
          ternary.cpp
          topk.cpp
          transpose.cpp
          trilu.cpp
          tflite_detection_postprocess.cpp
-         unary.cpp)
+         unary.cpp
+         layernorm.cpp)
 target_sources(kernels PRIVATE ${SRCS})

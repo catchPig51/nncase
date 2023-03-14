@@ -21,6 +21,7 @@
 #include <nncase/ir/ops/broadcast.h>
 #include <nncase/ir/ops/clamp.h>
 #include <nncase/ir/ops/compare.h>
+#include <nncase/ir/ops/compress.h>
 #include <nncase/ir/ops/concat.h>
 #include <nncase/ir/ops/conv2d.h>
 #include <nncase/ir/ops/conv2d_transpose.h>
@@ -29,9 +30,11 @@
 #include <nncase/ir/ops/dequantize.h>
 #include <nncase/ir/ops/fused_unary.h>
 #include <nncase/ir/ops/gather.h>
+#include <nncase/ir/ops/gather_elements.h>
 #include <nncase/ir/ops/gather_nd.h>
 #include <nncase/ir/ops/gru.h>
 #include <nncase/ir/ops/hardmax.h>
+#include <nncase/ir/ops/layernorm.h>
 #include <nncase/ir/ops/matmul.h>
 #include <nncase/ir/ops/onehot.h>
 #include <nncase/ir/ops/pad.h>
@@ -47,6 +50,7 @@
 #include <nncase/ir/ops/sigmoid.h>
 #include <nncase/ir/ops/slice.h>
 #include <nncase/ir/ops/softmax.h>
+#include <nncase/ir/ops/space_to_batch.h>
 #include <nncase/ir/ops/table_lookup.h>
 #include <nncase/ir/ops/ternary.h>
 #include <nncase/ir/ops/tflite_detection_postprocess.h>
@@ -516,6 +520,18 @@ void register_neutral_evaluators()
             std::cerr << "unsupported dtype for softmax: " + std::string(datatype_names(output_type));
         } });
 
+    register_evaluator(op_space_to_batch, [](ir::node &node, function_evaluate_context &context) {
+        auto &rnode = static_cast<space_to_batch &>(node);
+
+        auto input = context.memory_at(rnode.input());
+        auto output = context.memory_at(rnode.output());
+
+        kernels::space_to_batch(input.datatype(), input.buffer().data(), output.buffer().data(), input.shape(),
+            runtime_shape_t { (size_t)rnode.block_size_h(), (size_t)rnode.block_size_w() },
+            runtime_paddings_t { rnode.padding_h(), rnode.padding_w() },
+            input.strides(), output.strides())
+            .unwrap_or_throw(); });
+
     register_evaluator(op_ternary, [](ir::node &node, function_evaluate_context &context) {
         auto &rnode = static_cast<ternary &>(node);
 
@@ -530,6 +546,12 @@ void register_neutral_evaluators()
         case dt_float32:
             kernels::ternary(input_a.buffer().as_span<float>().data(), input_b.buffer().as_span<float>().data(),
                 input_c.buffer().as_span<float>().data(), output.buffer().as_span<float>().data(), input_a.shape(), input_a.strides(),
+                input_b.shape(), input_b.strides(), input_c.shape(), input_c.strides(), output.strides())
+                .unwrap_or_throw();
+            break;
+        case dt_int64:
+            kernels::ternary(input_a.buffer().as_span<float>().data(), input_b.buffer().as_span<int64_t>().data(),
+                input_c.buffer().as_span<int64_t>().data(), output.buffer().as_span<int64_t>().data(), input_a.shape(), input_a.strides(),
                 input_b.shape(), input_b.strides(), input_c.shape(), input_c.strides(), output.strides())
                 .unwrap_or_throw();
             break;
@@ -612,6 +634,9 @@ void register_neutral_evaluators()
             break;
         case unary_tanh:
             unary([](auto a) { return tanh(a); });
+            break;
+        case unary_erf:
+            unary([](auto a) { return erf(a); });
             break;
         default:
             throw std::runtime_error("Not supported unary");
@@ -818,7 +843,7 @@ void register_neutral_evaluators()
         auto output_h = context.memory_at(rnode.output_h());
         kernels::gru(input.buffer().as_span<float>().data(), W.buffer().as_span<float>().data(), R.buffer().as_span<float>().data(),
             B.buffer().as_span<float>().data(), initial_h.buffer().as_span<float>().data(), output.buffer().as_span<float>().data(), output_h.buffer().as_span<float>().data(),
-            input.shape(), W.shape(), rnode.direction())
+            input.shape(), W.shape(), rnode.direction(), rnode.linear_before_reset())
             .unwrap_or_throw(); });
 
     register_evaluator(op_tflite_detection_postprocess, [](ir::node &node, function_evaluate_context &context) {
@@ -835,6 +860,55 @@ void register_neutral_evaluators()
             box.shape(), score.shape(), anchor.shape(), rnode.max_detections(), rnode.max_classes_per_detection(), 
             rnode.detections_per_class(), rnode.use_regular_non_max_suppression(), rnode.nms_score_threshold(), rnode.nms_iou_threshold(),
             rnode.num_classes(), rnode.y_scale(), rnode.x_scale(), rnode.h_scale(), rnode.w_scale())
+            .unwrap_or_throw(); });
+
+    register_evaluator(op_gather_elements, [](ir::node &node, function_evaluate_context &context) {
+        auto &rnode = static_cast<gather_elements &>(node);
+        auto input = context.memory_at(rnode.input());
+        auto indices = context.memory_at(rnode.indices());
+        auto output = context.memory_at(rnode.output());
+        auto input_datatype = rnode.input().type();
+
+        switch (input_datatype)
+        {
+        case dt_float32:
+            kernels::gather_elements(input.buffer().as_span<float>().data(), indices.buffer().as_span<int64_t>().data(), output.buffer().as_span<float>().data(),
+                input.shape(), indices.shape(), rnode.axis())
+                .unwrap_or_throw();
+            break;
+        default:
+            throw std::runtime_error("unsupported dtype for gather_elements: " + std::string(datatype_names(input_datatype)));
+        }
+    });
+
+    register_evaluator(op_layernorm, [](ir::node &node, function_evaluate_context &context) {
+        auto &rnode = static_cast<layernorm &>(node);
+
+        auto input = context.memory_at(rnode.input());
+        auto scale = context.memory_at(rnode.scale());
+        auto bias = context.memory_at(rnode.bias());
+        auto output = context.memory_at(rnode.output());
+
+        auto output_type = rnode.output().type();
+        switch (output_type)
+        {
+        case dt_float32:
+            kernels::layernorm(input.buffer().as_span<float>().data(), output.buffer().as_span<float>().data(),
+             scale.buffer().as_span<float>().data(), bias.buffer().as_span<float>().data(), input.shape(),
+                rnode.axis(), rnode.epsilon())
+                .unwrap_or_throw();
+            break;
+        default:
+            std::cerr << "unsupported dtype for layernorm: " + std::string(datatype_names(output_type));
+        } });
+
+    register_evaluator(op_compress, [](ir::node &node, function_evaluate_context &context) {
+        auto &rnode = static_cast<compress &>(node);
+        auto input = context.memory_at(rnode.input());
+        auto condition = context.memory_at(rnode.condition());
+        auto output = context.memory_at(rnode.output());
+        kernels::compress(input.buffer().as_span<float>().data(), condition.buffer().as_span<uint8_t>().data(), output.buffer().as_span<float>().data(),
+            input.shape(), condition.shape(), rnode.axis())
             .unwrap_or_throw(); });
 }
 

@@ -1312,4 +1312,79 @@ void tflite_detection_postprocess(const T *CXX_RESTRICT boxes, const T *CXX_REST
     }
 }
 
+inline void layernorm(const float *input, float *output, float *scale, float *bias, runtime_shape_t in_shape, int32_t axis, float epsilon)
+{
+    auto outer_size = 1;
+    auto inner_size = 1;
+    for (auto i = 0; i < axis; i++)
+        outer_size *= in_shape[i];
+    for (auto i = axis; i < in_shape.size(); i++)
+        inner_size *= in_shape[i];
+
+    for (int32_t batch = 0; batch < outer_size; batch++)
+    {
+        auto src = input + batch * inner_size;
+        auto dest = output + batch * inner_size;
+
+        float mean1 = 0.f;
+        for (size_t i = 0; i < inner_size; i++)
+            mean1 += src[i] / inner_size;
+
+        std::vector<float> sub(inner_size, 0.f);
+        for (size_t i = 0; i < inner_size; i++)
+            sub[i] = src[i] - mean1;
+
+        std::vector<float> pow(inner_size, 0.f);
+        for (size_t i = 0; i < inner_size; i++)
+            pow[i] = sub[i] * sub[i];
+
+        float mean2 = 0.f;
+        for (size_t i = 0; i < inner_size; i++)
+            mean2 += pow[i] / inner_size;
+
+        float add = mean2 + epsilon;
+        float sqrt = std::sqrt(add);
+
+        std::vector<float> div(inner_size, 0.f);
+        for (size_t i = 0; i < inner_size; i++)
+            div[i] = sub[i] / sqrt;
+
+        for (size_t i = 0; i < inner_size; i++)
+            dest[i] = div[i] * scale[i] + bias[i];
+    }
+}
+
+template <class T>
+void compress(const T *input, const uint8_t *condition, T *output, const runtime_shape_t &input_shape, const runtime_shape_t &condition_shape, const int axis)
+{
+    if (axis == (int)input_shape.size())
+    {
+        for (auto i = 0; i < (int)condition_shape[0]; i++)
+        {
+            if ((float)*(condition + i) == 0)
+            {
+                continue;
+            }
+            *output++ = *(input + i);
+        }
+    }
+    else
+    {
+        int select_slice = 1;
+        for (auto i = axis + 1; i < (int)input_shape.size(); i++)
+        {
+            select_slice *= input_shape[i];
+        }
+        for (auto j = 0; j < (int)kernels::detail::compute_size(input_shape); j++)
+        {
+            auto i = j % (select_slice * input_shape[axis]);
+            auto cond_index = i / select_slice;
+            if (select_slice != 1 && (cond_index >= condition_shape[0] || condition[cond_index] == 0))
+                continue;
+            if (select_slice == 1 && (i % input_shape[axis] >= condition_shape[0] || condition[cond_index % input_shape[axis] % condition_shape[0]] == 0))
+                continue;
+            *output++ = *(input + j);
+        }
+    }
+}
 }
